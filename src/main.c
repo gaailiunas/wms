@@ -1,5 +1,7 @@
-#include <stdio.h>
+#include <wms/log.h>
 
-int main(void) {
+int main(void)
+{
     return 0;
 }
+
