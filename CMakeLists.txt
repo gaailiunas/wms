@@ -4,7 +4,7 @@ project(wms)
 set(SOURCES
     src/main.c
     src/log.c
-    src/eventloop.c
+    src/evloop.c
 )
 
 add_executable(wms ${SOURCES})
