@@ -136,7 +136,7 @@ void wms_evloop_dispatch(wms_evloop_t *loop)
         return;
     }
 
-    clients = (wms_client_t *)malloc(sizeof(*clients) * fds_size - 1);
+    clients = (wms_client_t *)malloc(sizeof(*clients) * fds_size - 2);
     if (clients == NULL) {
         free(fds);
         LOG_DEBUG("Failed to allocate fds dynamic array");
@@ -184,7 +184,7 @@ void wms_evloop_dispatch(wms_evloop_t *loop)
                             goto exit;
                         }
 
-                        wms_client_t *tmp1 = (wms_client_t *)realloc(clients, fds_size - 1);
+                        wms_client_t *tmp1 = (wms_client_t *)realloc(clients, fds_size - 2);
                         if (tmp1 == NULL) {
                             LOG_WARN("Memory exhaustion. Cannot increase memory of the clients array");
                             free(tmp0);
