@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <sys/poll.h>
+#include <arpa/inet.h>
 
 #define FDS_INITIAL_CAPACITY 16
 #define POLL_TIMEOUT 0
@@ -50,11 +51,60 @@ static int wms_evloop__setup_server(wms_evloop_t *loop, const uint16_t *port)
     return 0;
 }
 
-wms_evloop_t *wms_evloop_init(const uint16_t port)
+static int wms_evloop__setup_multicast_server(wms_evloop_t *loop, const char *addr, const uint16_t *port)
+{
+    loop->multicast_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (loop->multicast_fd == -1) {
+        LOG_DEBUG("Failed to create multicast socket");
+        return 1;
+    }
+    
+    int opt = 1;
+    if (setsockopt(loop->multicast_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        LOG_DEBUG("setsockopt(SO_REUSEADDR) failed");
+        close(loop->multicast_fd);
+        return 1;
+    }
+
+    struct sockaddr_in sin;
+    sin.sin_family = AF_INET;
+    sin.sin_port = htons(*port);
+    sin.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(loop->multicast_fd, (const struct sockaddr *)&sin, sizeof(sin)) != 0) {
+        LOG_DEBUG("Failed to bind multicast socket");
+        close(loop->multicast_fd);
+        return 1;
+    }
+
+    struct ip_mreq mreq;
+    if (inet_pton(AF_INET, addr, &mreq.imr_multiaddr) != 1) {
+        LOG_DEBUG("Failed to turn multicast ip to ipv4");
+        close(loop->multicast_fd);
+        return 1;
+    }
+    mreq.imr_interface.s_addr = INADDR_ANY;
+    
+    // join the group
+    if (setsockopt(loop->multicast_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) < 0) {
+        LOG_DEBUG("Failed to subscribe to multicast group");
+        close(loop->multicast_fd);
+        return 1;
+    }
+
+    return 0;
+}
+
+wms_evloop_t *wms_evloop_init(const uint16_t port, const char *multicast_addr,
+        const uint16_t multicast_port)
 {
     wms_evloop_t *loop = (wms_evloop_t *)malloc(sizeof(*loop));
     if (loop != NULL) {
         if (wms_evloop__setup_server(loop, &port) != 0) {
+            free(loop);
+            return NULL;
+        }
+        if (wms_evloop__setup_multicast_server(loop, multicast_addr, &multicast_port) != 0) {
             free(loop);
             return NULL;
         }
@@ -66,8 +116,8 @@ static inline int pollfd_remove(struct pollfd *fds, wms_client_t *clients, nfds_
 {
     fds[index] = fds[*nfds - 1];
     LOG_DEBUG("fds[%lu] = fds[%lu]", index, *nfds - 1);
-    clients[index - 1] = clients[*nfds - 2];
-    LOG_DEBUG("clients[%lu] = clients[%lu]", index - 1, *nfds - 2);
+    clients[index - 2] = clients[*nfds - 3];
+    LOG_DEBUG("clients[%lu] = clients[%lu]", index - 2, *nfds - 3);
     (*nfds)--;
     return index - 1;
 }
@@ -95,7 +145,12 @@ void wms_evloop_dispatch(wms_evloop_t *loop)
     fds[0].fd = loop->server_fd;
     fds[0].events = POLLIN;
     fds[0].revents = 0;
-    nfds = 1;
+
+    fds[1].fd = loop->multicast_fd;
+    fds[1].events = POLLIN;
+    fds[1].revents = 0;
+
+    nfds = 2;
 
     int res;
     while ((res = poll(fds, nfds, POLL_TIMEOUT)) >= 0) {
@@ -116,7 +171,7 @@ void wms_evloop_dispatch(wms_evloop_t *loop)
                     fds[nfds].events = POLLIN;
                     fds[nfds].revents = 0;
                     
-                    clients[nfds - 1].fd = client_fd;
+                    clients[nfds - 2].fd = client_fd;
 
                     nfds++; 
 
@@ -147,32 +202,52 @@ void wms_evloop_dispatch(wms_evloop_t *loop)
                     }
                     
                     int nread = recv(fds[i].fd, data, BUF_SIZE, 0);
-                    if (nread == -1) {
-                        LOG_DEBUG("Failed to receive data from client fds[%lu]", i);
-                        close(fds[i].fd);
-                        i = pollfd_remove(fds, clients, &nfds, i);
-                    }
-                    else if (nread == 0) {
-                        LOG_DEBUG("Client at fds[%lu] disconnected", i);
-                        close(fds[i].fd);
-                        i = pollfd_remove(fds, clients, &nfds, i);
+
+                    if (i == 1) {
+                        // multicast
+                        if (nread == -1) {
+                            LOG_WARN("Multicast socket broke");
+                        }
+                        else if (nread == 0) {
+                            LOG_WARN("Disconnected from multicast socket");
+                        }
+                        else {
+                            wms_event_on_multicast_announce(data, nread);
+                            // transfer data buf ownership to the event handler
+                            continue;
+                        }
+
+                        free(data);
+                        goto exit;
                     }
                     else {
-                        LOG_DEBUG("Data from fds[%lu]: %d bytes", i, nread);
-                        wms_event_on_read(&clients[i - 1], data, nread);
-                        // transfer data buf ownership to the event handler
-                        continue;
+                        if (nread == -1) {
+                            LOG_DEBUG("Failed to receive data from client fds[%lu]", i);
+                        }
+                        else if (nread == 0) {
+                            LOG_DEBUG("Client at fds[%lu] disconnected", i);
+                        }
+                        else {
+                            LOG_DEBUG("Data from fds[%lu]: %d bytes", i, nread);
+                            wms_event_on_read(&clients[i - 2], data, nread);
+                            // transfer data buf ownership to the event handler
+                            continue;
+                        }
+                    
+                        close(fds[i].fd);
+                        i = pollfd_remove(fds, clients, &nfds, i);
+                        free(data);
                     }
-                
-                    free(data);
                 }
             }
         }
     }
 
 exit:
-    // skip the server fd
-    for (size_t i = 1; i < nfds; i++) {
+    LOG_DEBUG("Exiting event loop");
+
+    // skip the server and multicast fds
+    for (size_t i = 2; i < nfds; i++) {
         if (fds[i].fd != -1) {
             LOG_DEBUG("Closing fds[%lu], fd:%d", i, fds[i].fd);
             close(fds[i].fd);
@@ -185,6 +260,7 @@ exit:
 void wms_evloop_free(wms_evloop_t *loop)
 {
     close(loop->server_fd);
+    close(loop->multicast_fd);
     free(loop);
 }
 
