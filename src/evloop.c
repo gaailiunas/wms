@@ -26,6 +26,7 @@ static int wms_evloop__setup_server(wms_evloop_t *loop, const uint16_t *port)
     int opt = 1;
     if (setsockopt(loop->server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         LOG_DEBUG("setsockopt(SO_REUSEADDR) failed");
+        close(loop->server_fd);
         return 1;
     }
 
