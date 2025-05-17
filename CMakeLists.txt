@@ -5,6 +5,7 @@ set(SOURCES
     src/main.c
     src/log.c
     src/evloop.c
+    src/event.c
 )
 
 add_executable(wms ${SOURCES})

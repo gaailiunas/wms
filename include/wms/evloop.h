@@ -1,11 +1,14 @@
 #ifndef _WMS_EVLOOP_H
 #define _WMS_EVLOOP_H
 
-typedef struct wms_evloop_s {
+#include <stdint.h>
 
+typedef struct wms_evloop_s {
+    int server_fd;
 } wms_evloop_t;
 
-wms_evloop_t *wms_evloop_init();
+wms_evloop_t *wms_evloop_init(const uint16_t port);
+void wms_evloop_dispatch(wms_evloop_t *);
 void wms_evloop_free(wms_evloop_t *);
 
 #endif // _WMS_EVLOOP_H
