@@ -105,6 +105,7 @@ wms_evloop_t *wms_evloop_init(const uint16_t port, const char *multicast_addr,
             return NULL;
         }
         if (wms_evloop__setup_multicast_server(loop, multicast_addr, &multicast_port) != 0) {
+            close(loop->server_fd);
             free(loop);
             return NULL;
         }
