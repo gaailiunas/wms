@@ -79,7 +79,7 @@ void wms_evloop_dispatch(wms_evloop_t *loop)
     nfds_t nfds;
     size_t fds_size = FDS_INITIAL_CAPACITY;
 
-    fds = (struct pollfd *)malloc(sizeof(*fds) * FDS_INITIAL_CAPACITY);
+    fds = (struct pollfd *)malloc(sizeof(*fds) * fds_size);
     if (fds == NULL) {
         LOG_DEBUG("Failed to allocate fds dynamic array");
         return;
@@ -131,6 +131,7 @@ void wms_evloop_dispatch(wms_evloop_t *loop)
                         wms_client_t *tmp1 = (wms_client_t *)realloc(clients, fds_size - 1);
                         if (tmp1 == NULL) {
                             LOG_WARN("Memory exhaustion. Cannot increase memory of the clients array");
+                            free(tmp0);
                             goto exit;
                         }
 
