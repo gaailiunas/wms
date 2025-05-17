@@ -8,8 +8,7 @@ typedef struct wms_evloop_s {
     int multicast_fd;
 } wms_evloop_t;
 
-wms_evloop_t *wms_evloop_init(const uint16_t port,
-        const char *multicast_addr,
+wms_evloop_t *wms_evloop_init(const uint16_t port, const char *multicast_addr,
         const uint16_t multicast_port);
 void wms_evloop_dispatch(wms_evloop_t *);
 void wms_evloop_free(wms_evloop_t *);

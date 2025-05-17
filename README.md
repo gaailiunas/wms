@@ -8,3 +8,10 @@ mkdir build && cd build
 cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 ```
+### Cross-compilation
+```bash
+mkdir build && cd build
+cmake -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_EXE_LINKER_FLAGS="-static" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug ..
+cmake --build .
+```
+
